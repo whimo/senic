@@ -5,7 +5,9 @@ from scipy.signal import convolve2d
 
 
 def estimate_noise(img):
-    # Returns estimated noise level, lower is better. Good images have about 0-2
+    '''
+    Returns estimated noise level, lower is better. Good images have about 0-2
+    '''
     height, width = img.shape
 
     kernel = [[1, -2, 1],
@@ -19,5 +21,7 @@ def estimate_noise(img):
 
 
 def estimate_blur(img):
-    # Returns estimated blur level, higher is better. Threshold: about 100
+    '''
+    Returns estimated blur level, higher is better. Threshold: about 100
+    '''
     return cv2.Laplacian(img, cv2.CV_64F).var()
