@@ -108,3 +108,9 @@ def apply_patchwise(img, fn, patch_size=256, *args, **kwargs):
             offset_height = height - patch_size
 
     return img
+
+
+def upscale_image(img, scale_factor):
+    new_img = cv2.resize(img, (img.shape[1] * scale_factor, img.shape[0] * scale_factor),
+                         interpolation=cv2.INTER_CUBIC)
+    return new_img

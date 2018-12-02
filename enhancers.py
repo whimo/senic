@@ -3,15 +3,19 @@ from keras.layers import Conv2D
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from keras.optimizers import Adam
 import numpy as np
+import subprocess
 import os
 from glob import glob
 
-from utils import SRDataGenerator, apply_patchwise
+from utils import SRDataGenerator, apply_patchwise, upscale_image
 
 SRCNN_WEIGHTS_PATH = 'base_srcnn.h5'
 SRCNN_INPUT_SHAPE = (256, 256, 3)
 SRCNN_LEARNING_RATE = 3e-4
 SRCNN_BATCH_SIZE = 32
+
+W2X_BASEDIR = 'waifu2x'
+W2X_BASE_MODEL_NAME = 'photo'
 
 DEFAULT_CALLBACKS = [ModelCheckpoint('best_weights.h5',
                                      monitor='val_loss',
@@ -89,3 +93,51 @@ class SRCNN(object):
                 generator=train_generator,
                 steps_per_epoch=int(len(train_filenames) * 2.0 / batch_size),
                 epochs=epochs)
+
+    def process_patch(self, patch):
+        return (self.model.predict(np.array([patch / 255.0]))[0] * 255.0).astype(np.int32)
+
+    def enhance(self, img, upscale=True):
+        if upscale:
+            img = upscale_image(img, 2)
+
+        return apply_patchwise(img, self.process_patch)
+
+
+class W2X(object):
+    '''
+    Waifu2x models wrapper
+    '''
+
+    def __init__(self, basedir=W2X_BASEDIR, base_model_name=W2X_BASE_MODEL_NAME):
+        self.basedir = basedir
+        self.base_model_path = os.path.join(basedir, 'models', base_model_name)
+
+    def denoise(self, image_path, result_path, noise_level=1, model_name=W2X_BASE_MODEL_NAME):
+        subprocess.check_output(['th',
+                                 os.path.join(self.basedir, 'waifu2x.lua'),
+                                 '-model_dir', os.path.join(self.basedir, 'models', model_name),
+                                 '-m', 'noise',
+                                 '-noise_level', str(noise_level),
+                                 '-i', image_path,
+                                 '-o', result_path,
+                                 '-force_cudnn', '1'])
+
+    def upscale(self, image_path, result_path, model_name=W2X_BASE_MODEL_NAME):
+        subprocess.check_output(['th',
+                                 os.path.join(self.basedir, 'waifu2x.lua'),
+                                 '-model_dir', os.path.join(self.basedir, 'models', model_name),
+                                 '-m', 'scale',
+                                 '-i', image_path,
+                                 '-o', result_path,
+                                 '-force_cudnn', '1'])
+
+    def enchance(self, image_path, result_path, noise_level=1, model_name=W2X_BASE_MODEL_NAME):
+        subprocess.check_output(['th',
+                                 os.path.join(self.basedir, 'waifu2x.lua'),
+                                 '-model_dir', os.path.join(self.basedir, 'models', model_name),
+                                 '-m', 'noise_scale',
+                                 '-noise_level', str(noise_level),
+                                 '-i', image_path,
+                                 '-o', result_path,
+                                 '-force_cudnn', '1'])
