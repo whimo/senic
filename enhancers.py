@@ -16,6 +16,7 @@ SRCNN_BATCH_SIZE = 32
 
 W2X_BASEDIR = 'waifu2x'
 W2X_BASE_MODEL_NAME = 'photo'
+W2X_MAX_TRAINING_SIZE = 2048
 
 DEFAULT_CALLBACKS = [ModelCheckpoint('best_weights.h5',
                                      monitor='val_loss',
@@ -114,30 +115,95 @@ class W2X(object):
         self.base_model_path = os.path.join(basedir, 'models', base_model_name)
 
     def denoise(self, image_path, result_path, noise_level=1, model_name=W2X_BASE_MODEL_NAME):
-        subprocess.check_output(['th',
-                                 os.path.join(self.basedir, 'waifu2x.lua'),
-                                 '-model_dir', os.path.join(self.basedir, 'models', model_name),
-                                 '-m', 'noise',
-                                 '-noise_level', str(noise_level),
-                                 '-i', image_path,
-                                 '-o', result_path,
-                                 '-force_cudnn', '1'])
+        return subprocess.check_output(['th',
+                                        os.path.join(self.basedir, 'waifu2x.lua'),
+                                        '-model_dir', os.path.join(self.basedir, 'models', model_name),
+                                        '-m', 'noise',
+                                        '-noise_level', str(noise_level),
+                                        '-i', image_path,
+                                        '-o', result_path,
+                                        '-force_cudnn', '1'])
 
     def upscale(self, image_path, result_path, model_name=W2X_BASE_MODEL_NAME):
-        subprocess.check_output(['th',
-                                 os.path.join(self.basedir, 'waifu2x.lua'),
-                                 '-model_dir', os.path.join(self.basedir, 'models', model_name),
-                                 '-m', 'scale',
-                                 '-i', image_path,
-                                 '-o', result_path,
-                                 '-force_cudnn', '1'])
+        return subprocess.check_output(['th',
+                                        os.path.join(self.basedir, 'waifu2x.lua'),
+                                        '-model_dir', os.path.join(self.basedir, 'models', model_name),
+                                        '-m', 'scale',
+                                        '-i', image_path,
+                                        '-o', result_path,
+                                        '-force_cudnn', '1'])
 
     def enchance(self, image_path, result_path, noise_level=1, model_name=W2X_BASE_MODEL_NAME):
+        return subprocess.check_output(['th',
+                                        os.path.join(self.basedir, 'waifu2x.lua'),
+                                        '-model_dir', os.path.join(self.basedir, 'models', model_name),
+                                        '-m', 'noise_scale',
+                                        '-noise_level', str(noise_level),
+                                        '-i', image_path,
+                                        '-o', result_path,
+                                        '-force_cudnn', '1'])
+
+    def train(self,
+              images_dir,
+              model_name,
+              method='noise_scale',
+              noise_level=1,
+              transfer=True,
+              max_size=W2X_MAX_TRAINING_SIZE):
+
+        if transfer:
+            if method == 'scale':
+                base_weights_path = os.path.join(self.base_model_path, 'scale2.0x_model.t7')
+            if method == 'noise':
+                base_weights_path = os.path.join(self.base_model_path,
+                                                 'noise{}_model.t7'.format(noise_level))
+            else:
+                base_weights_path = os.path.join(self.base_model_path,
+                                                 'noise{}_scale2.0x_model.t7'.format(noise_level))
+
         subprocess.check_output(['th',
-                                 os.path.join(self.basedir, 'waifu2x.lua'),
-                                 '-model_dir', os.path.join(self.basedir, 'models', model_name),
-                                 '-m', 'noise_scale',
-                                 '-noise_level', str(noise_level),
-                                 '-i', image_path,
-                                 '-o', result_path,
-                                 '-force_cudnn', '1'])
+                                 os.path.join(self.basedir, 'convert_data.lua'),
+                                 '-style', 'photo',
+                                 '-data_dir', images_dir,
+                                 '-max_training_image_size', str(max_size)])
+
+        params = ['-style', 'photo',
+                  '-data_dir', images_dir,
+                  '-model_dir', os.path.join(self.basedir, 'models', model_name),
+                  '-color', 'rgb',
+                  '-thread', '3',
+                  '-backend', 'cudnn',
+                  '-active_cropping_rate', '0',
+                  '-resize_blur_min', '1',
+                  '-resize_blur_max', '1']
+
+        if method == 'scale':
+            params += ['-method', 'scale',
+                       '-model', 'upconv_7',
+                       '-downsampling_filters', '\"Box,Sinc,Catrom\"',
+                       '-random_unsharp_mask_rate', '0.3',
+                       '-oracle_rate', '0.05']
+
+        elif method == 'noise':
+            params += ['-method', 'noise',
+                       '-model', 'vgg_7',
+                       '-noise_level', str(noise_level),
+                       '-random_unsharp_mask_rate', '0.5',
+                       '-nr_rate', ('0.3' if noise_level <= 1 else '0.6' if noise_level == 2 else '1.0'),
+                       '-oracle_rate', '0.0',
+                       '-crop_size', '32']
+        else:
+            params += ['-method', 'noise_scale',
+                       '-model', 'upconv_7',
+                       '-downsampling_filters', '\"Box,Sinc,Catrom\"',
+                       '-noise_level', str(noise_level),
+                       '-random_unsharp_mask_rate', '0.5',
+                       '-nr_rate', ('0.3' if noise_level <= 1 else '0.6' if noise_level == 2 else '1.0'),
+                       '-oracle_rate', '0.0',
+                       '-crop_size', '32']
+
+        if transfer:
+            params += ['-resume', base_weights_path]
+
+        subprocess.check_output(['th', os.path.join(self.basedir, 'train.lua')] + params,
+                                timeout=60)
