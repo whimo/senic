@@ -1,3 +1,66 @@
+import numpy as np
+import cv2
+import random
+from glob import glob
+import os
+
+
+class SRDataGenerator(object):
+    '''
+    Data generator for super-resolution models
+    '''
+    def flow_from_directory(self, input_dir, scale_factor=2, batch_size=32, input_filename='*'):
+        filenames = glob(os.path.join(input_dir, input_filename))
+
+        hr_images = []
+        lr_images = []
+
+        while True:
+            np.random.shuffle(filenames)
+
+            for filename in filenames:
+                img = self.load_image(filename)
+                if img is None or img.shape[0] < 256 or img.shape[1] < 256:
+                    continue
+
+                patches = self.genrate_random_patches(img)
+                hr_images += patches
+                lr_images += [self.downscale_image(p) for p in patches]
+
+                while len(hr_images) >= batch_size:
+                    indices = np.random.permutation(batch_size)
+                    yield np.array(hr_images[:batch_size]).astype('float32')[indices],\
+                          np.array(lr_images[:batch_size]).astype('float32')[indices]
+
+                    hr_images, lr_images = hr_images[batch_size:], lr_images[batch_size:]
+
+    def load_image(self, filename):
+        try:
+            return cv2.imread(filename).astype(np.float32)
+        except AttributeError:
+            return None
+
+    def genrate_random_patches(self, img, num=None, patch_size=256):
+        height, width, _ = img.shape
+        patches = []
+        if num is None:
+            num = random.randint(1, 3)
+
+        for _ in range(num):
+            patch_y, patch_x = random.randint(0, height - patch_size),\
+                               random.randint(0, width - patch_size)
+            patch = img[patch_y:patch_y + patch_size, patch_x:patch_x + patch_size]
+            patches.append(patch)
+
+        return patches
+
+    def downsample_image(self, img):
+        new_img = cv2.pyrDown(img)
+        new_img = cv2.resize(new_img, (img.shape[1], img.shape[0]),
+                             interpolation=cv2.INTER_CUBIC)
+        return new_img
+
+
 def apply_to_patch(img, fn, coord, patch_size, original_img=None, *args, **kwargs):
     '''
     Applies given function to a square patch of an image.
