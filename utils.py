@@ -9,6 +9,7 @@ class SRDataGenerator(object):
     '''
     Data generator for super-resolution models
     '''
+
     def flow_from_directory(self, input_dir, scale_factor=2, batch_size=32, input_filename='*'):
         filenames = glob(os.path.join(input_dir, input_filename))
 
